@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Trading Bot Dashboard</title>
+    <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #0a0a1a; color: white; padding: 20px; }
+        .container { max-width: 1200px; margin: 0 auto; }
+        .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 30px; flex-wrap: wrap; gap: 15px; }
+        h1 { font-size: 1.8rem; background: linear-gradient(135deg, #00ff88, #00b4d8); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+        .card { background: rgba(30,30,50,0.8); border-radius: 16px; padding: 20px; margin-bottom: 20px; }
+        .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 16px; margin-bottom: 24px; }
+        .stat { text-align: center; padding: 15px; background: rgba(30,30,50,0.8); border-radius: 12px; }
+        .stat-value { font-size: 1.8rem; font-weight: bold; }
+        .positive { color: #00ff88; }
+        .negative { color: #ff4444; }
+        table { width: 100%; border-collapse: collapse; }
+        th, td { padding: 12px; text-align: left; border-bottom: 1px solid rgba(255,255,255,0.1); }
+        .btn { padding: 10px 20px; border: none; border-radius: 8px; cursor: pointer; font-weight: 500; margin-right: 10px; }
+        .btn-start { background: #00aa44; color: white; }
+        .btn-stop { background: #cc3333; color: white; }
+        .btn-refresh { background: #0066cc; color: white; }
+        .logs { height: 200px; overflow-y: auto; font-family: monospace; font-size: 0.8rem; background: rgba(0,0,0,0.5); border-radius: 8px; padding: 10px; }
+        @media (max-width: 768px) { .stat-value { font-size: 1.2rem; } th, td { font-size: 0.75rem; padding: 8px; } }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>📈 Trading Bot Dashboard</h1>
+            <div>
+                <button id="startBtn" class="btn btn-start">▶️ Start Bot</button>
+                <button id="stopBtn" class="btn btn-stop">⏹️ Stop Bot</button>
+                <button id="refreshBtn" class="btn btn-refresh">🔄 Refresh</button>
+            </div>
+        </div>
+        
+        <div class="stats-grid" id="statsGrid">
+            <div class="stat"><div>📊 Total Trades</div><div class="stat-value" id="totalTrades">--</div></div>
+            <div class="stat"><div>💰 Total P&L</div><div class="stat-value" id="totalPnl">--</div></div>
+            <div class="stat"><div>🏆 Win Rate</div><div class="stat-value" id="winRate">--</div></div>
+            <div class="stat"><div>📈 Profit Factor</div><div class="stat-value" id="profitFactor">--</div></div>
+        </div>
+        
+        <div class="card">
+            <h3>📋 Recent Trades</h3>
+            <div style="overflow-x: auto;"><table id="tradesTable"><thead><tr><th>ID</th><th>Symbol</th><th>Entry</th><th>Qty</th><th>P&L</th><th>Strategy</th></tr></thead><tbody id="tradesBody"><tr><td colspan="6">Loading...</td></tr></tbody></table></div>
+        </div>
+        
+        <div class="card">
+            <h3>📝 Live Logs</h3>
+            <div id="logsContainer" class="logs">Connecting...</div>
+        </div>
+    </div>
+    
+    <script>
+        let socket = null;
+        
+        function initSocket() {
+            socket = io();
+            socket.on('connect', () => { addLog('Connected to server'); refreshData(); });
+            socket.on('disconnect', () => { addLog('Disconnected'); });
+            socket.on('new_log', (data) => { addLog(data.message); });
+        }
+        
+        function addLog(msg) {
+            const container = document.getElementById('logsContainer');
+            const time = new Date().toLocaleTimeString();
+            const div = document.createElement('div');
+            div.innerHTML = `[${time}] ${msg}`;
+            container.prepend(div);
+            while (container.children.length > 100) container.removeChild(container.lastChild);
+        }
+        
+        async function refreshData() {
+            try {
+                const stats = await fetch('/api/stats').then(r => r.json());
+                document.getElementById('totalTrades').innerText = stats.total_trades;
+                const pnlEl = document.getElementById('totalPnl');
+                pnlEl.innerText = `₹${stats.total_pnl.toLocaleString()}`;
+                pnlEl.className = `stat-value ${stats.total_pnl >= 0 ? 'positive' : 'negative'}`;
+                document.getElementById('winRate').innerText = `${stats.win_rate}%`;
+                document.getElementById('profitFactor').innerText = stats.profit_factor.toFixed(2);
+                
+                const trades = await fetch('/api/trades?limit=20').then(r => r.json());
+                const tbody = document.getElementById('tradesBody');
+                if (trades.length === 0) tbody.innerHTML = '<tr><td colspan="6">No trades yet</td></tr>';
+                else tbody.innerHTML = trades.map(t => `<tr><td>${t.trade_id}</td><td>${t.symbol}</td><td>₹${(t.entry_price||0).toFixed(2)}</td><td>${t.quantity}</td><td class="${t.pnl>=0?'positive':'negative'}">₹${(t.pnl||0).toFixed(2)}</td><td>${t.strategy||'-'}</td></tr>`).join('');
+            } catch(e) { console.error(e); }
+        }
+        
+        document.getElementById('startBtn').onclick = () => fetch('/api/bot/start', {method:'POST'}).then(()=>addLog('Start command sent'));
+        document.getElementById('stopBtn').onclick = () => fetch('/api/bot/stop', {method:'POST'}).then(()=>addLog('Stop command sent'));
+        document.getElementById('refreshBtn').onclick = () => refreshData();
+        
+        initSocket();
+        refreshData();
+        setInterval(refreshData, 10000);
+    </script>
+</body>
+</html>
