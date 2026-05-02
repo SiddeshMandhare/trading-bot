@@ -348,6 +348,16 @@ def get_local_ip():
         s.close()
     return ip
 
+# Add this to app.py - Health check endpoint for Render
+@app.route('/health')
+def health_check():
+    """Health check endpoint for Render"""
+    return jsonify({
+        'status': 'healthy',
+        'timestamp': datetime.now().isoformat(),
+        'bot_running': is_bot_running
+    })
+
 if __name__ == '__main__':
     # Initialize database
     init_db()
