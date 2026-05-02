@@ -112,6 +112,27 @@ def add_log(log_type, message):
 # API ENDPOINTS
 # ============================================
 
+@app.route('/api/positions')
+def get_positions():
+    """Get open positions"""
+    # This should return current open positions from your bot
+    # For now, return empty list
+    return jsonify([])
+
+@app.route('/api/market')
+def get_market_data():
+    """Get market indices data"""
+    from market_data_service import MarketDataService
+    token = get_token_from_cache()
+    if token:
+        class MockTSL:
+            def __init__(self, token):
+                self.access_token = token
+        tsl = MockTSL(token)
+        market_service = MarketDataService(tsl)
+        return jsonify(market_service.get_index_prices())
+    return jsonify({})
+    
 @app.route('/')
 def index():
     """Serve the dashboard"""
