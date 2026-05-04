@@ -165,28 +165,7 @@ def get_strategies():
         })
     return jsonify(sorted(strategies, key=lambda x: x['pnl'], reverse=True))
 
-@app.route('/api/market')
-def get_market_data():
-    """Get market indices data with fallback mock data"""
-    try:
-        from market_data_service import MarketDataService
-        from auth_service import get_token_storage
-        
-        storage = get_token_storage(Config.CLIENT_CODE)
-        token = storage.get_token() if storage else None
-        
-        # Return mock data for now (will show real data when bot is authenticated)
-        mock_data = {
-            "NIFTY 50": {"ltp": 24500.50, "change": 120.30, "change_percent": 0.49},
-            "BANKNIFTY": {"ltp": 52100.00, "change": 350.75, "change_percent": 0.68},
-            "FINNIFTY": {"ltp": 21800.25, "change": 150.50, "change_percent": 0.69},
-            "SENSEX": {"ltp": 80500.00, "change": 250.00, "change_percent": 0.31}
-        }
-        return jsonify(mock_data)
-        
-    except Exception as e:
-        logger.error(f"Market data error: {e}")
-        return jsonify({})
+
 
 @app.route('/api/bot/status')
 def get_bot_status():
