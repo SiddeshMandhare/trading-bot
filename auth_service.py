@@ -68,3 +68,24 @@ def create_tradehull_with_totp(client_code: str, pin: str, totp_secret: str, ret
 def get_token_status(client_code: str) -> dict:
     storage = get_token_storage(client_code)
     return storage.get_token_info() or {'has_token': False}
+
+# Add these functions to auth_service.py
+
+def verify_authentication():
+    """Verify that authentication is working"""
+    try:
+        from config import Config
+        test_tsl = create_tradehull_with_totp(Config.CLIENT_CODE, Config.PIN, Config.TOTP_SECRET, force_new=True)
+        
+        if test_tsl:
+            # Test API call
+            balance = test_tsl.get_balance()
+            return {
+                'authenticated': True,
+                'balance': balance,
+                'client_code': Config.CLIENT_CODE
+            }
+        else:
+            return {'authenticated': False, 'error': 'Failed to create Tradehull instance'}
+    except Exception as e:
+        return {'authenticated': False, 'error': str(e)}
