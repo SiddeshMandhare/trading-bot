@@ -5,9 +5,36 @@ services:
     plan: free
     envVars:
       - key: PYTHON_VERSION
-        value: 3.12.0
+        value: 3.9.18
       - key: PORT
         value: 5000
-    buildCommand: pip install -r requirements.txt
-    startCommand: python app.py
+      - key: FLASK_ENV
+        value: production
+      - key: CLIENT_CODE
+        sync: false
+      - key: PIN
+        sync: false
+      - key: TOTP_SECRET
+        sync: false
+    buildCommand: |
+      pip install --upgrade pip
+      pip install -r requirements.txt
+    startCommand: gunicorn app:app --bind 0.0.0.0:5000
     autoDeploy: true
+    
+  # Add a worker for background tasks
+  - type: worker
+    name: trading-bot-worker
+    runtime: python
+    plan: free
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.9.18
+      - key: CLIENT_CODE
+        sync: false
+      - key: PIN
+        sync: false
+      - key: TOTP_SECRET
+        sync: false
+    buildCommand: pip install -r requirements.txt
+    startCommand: python main.py
