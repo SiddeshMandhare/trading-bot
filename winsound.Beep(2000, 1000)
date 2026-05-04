@@ -6,7 +6,6 @@
 # import sqlite3
 # import logging
 # import datetime
-# import winsound
 # import pandas as pd
 # from tabulate import tabulate
 # from typing import Dict, List, Any
@@ -1621,13 +1620,13 @@ if __name__ == "__main__":
         print("\n=== Verifying API Connection ===")
         if not bot.verify_api_connection():
             print("❌ CRITICAL: API connection failed")
-            winsound.Beep(2000, 1000)
+            
             exit(1)
         
         print("\n=== Testing Telegram Notifications ===")
         if not bot.test_telegram_connection():
             print("⚠️ WARNING: Telegram notifications may not work")
-            winsound.Beep(1500, 500)
+            
         
         startup_msg = "🤖 *Trading Bot Started with TOTP Authentication!*\n\nCommands: /status, /balance, /positions, /close_all"
         bot.send_telegram_alert(startup_msg)
