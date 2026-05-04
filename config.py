@@ -52,6 +52,10 @@ class Config:
     ENABLE_DYNAMIC_EXITS = True
     ENABLE_STRATEGY_WEIGHT_OPTIMIZATION = True
     
+    TEST_MODE = False  # Set to False for production
+    USE_MOCK_DATA = False  # Set to False for production
+
+    
     # Strategy Configuration
     ACTIVE_STRATEGIES = ['EMA_RSI', 'MACD_Bollinger', 'RSI_50_Crossover', 
                         'VWAP_Reversion', 'MA_Crossover_50_200', 'ORB_30min']
