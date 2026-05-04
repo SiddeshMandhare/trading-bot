@@ -1,342 +1,4 @@
-# # main.py - Original Trading Bot (Preserved)
-# import os
-# import sys
-# import time
-# import json
-# import sqlite3
-# import logging
-# import datetime
-# import pandas as pd
-# from tabulate import tabulate
-# from typing import Dict, List, Any
-# from collections import defaultdict
-# from config import Config
-# from auth_service import create_tradehull_with_totp
-# from telegram_service import TelegramService
-# from data_service import DataService
-# from trade_execution import TradeExecution
-# from risk_management import SignalStrength, MarketRegime, SignalCooldown, AdaptiveTrailingStop
-# from position_sizing import KellyPositionSizer
-# from strategies import (
-#     EMA_RSI_Strategy, MACD_Bollinger_Strategy, RSI_50_Crossover,
-#     VWAP_Strategy, MovingAverageCrossover, OpeningRangeBreakout
-# )
-
-# # Setup logging
-# logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
-# logger = logging.getLogger(__name__)
-
-
-# class OptionTradingBot:
-#     def __init__(self):
-#         print("Initializing OptionTradingBot with TOTP authentication...")
-        
-#         # Clean database
-#         if os.path.exists('trading_bot.db'):
-#             # Don't delete, just preserve
-#             pass
-        
-#         # Authenticate with Dhan
-#         self.tsl = create_tradehull_with_totp(Config.CLIENT_CODE, Config.PIN, Config.TOTP_SECRET)
-#         if not self.tsl:
-#             raise Exception("Primary account authentication failed")
-        
-#         # Initialize services
-#         self.data_service = DataService(self.tsl)
-#         self.execution = TradeExecution(self.tsl)
-        
-#         # Initialize components
-#         self.signal_cooldown = SignalCooldown()
-#         self.trailing_manager = AdaptiveTrailingStop() if Config.ENABLE_ADAPTIVE_TRAILING else None
-#         self.kelly_sizer = KellyPositionSizer() if Config.USE_Kelly_SIZING else None
-#         self.completed_orders = []
-#         self.orderbook = {}
-        
-#         # Database
-#         self.conn = self._init_database()
-        
-#         # Strategies
-#         self.strategies = self._init_strategies()
-        
-#         # Capital
-#         self.current_balance = self._set_dynamic_capital()
-#         self.execution.current_balance = self.current_balance
-        
-#         # Telegram
-#         self.telegram = TelegramService(Config.BOT_TOKEN, Config.RECEIVER_CHAT_ID, self)
-#         self.telegram.start_command_handler()
-        
-#         print(f"Bot ready! Balance: ₹{self.current_balance:,.2f}")
-    
-#     def _init_strategies(self):
-#         strategies = []
-#         strategy_map = {
-#             'EMA_RSI': EMA_RSI_Strategy, 'MACD_Bollinger': MACD_Bollinger_Strategy,
-#             'RSI_50_Crossover': RSI_50_Crossover, 'VWAP_Reversion': VWAP_Strategy,
-#             'MA_Crossover_50_200': MovingAverageCrossover, 'ORB_30min': OpeningRangeBreakout
-#         }
-#         for name in Config.ACTIVE_STRATEGIES:
-#             if name in strategy_map:
-#                 strategies.append(strategy_map[name]())
-#                 print(f"Loaded strategy: {name}")
-#         return strategies
-    
-#     def _init_database(self):
-#         conn = sqlite3.connect('trading_bot.db', check_same_thread=False)
-#         cursor = conn.cursor()
-#         cursor.execute('''
-#             CREATE TABLE IF NOT EXISTS trades (
-#                 trade_id INTEGER PRIMARY KEY AUTOINCREMENT,
-#                 symbol TEXT, entry_time DATETIME, entry_price REAL,
-#                 quantity INTEGER, stop_loss REAL, target_price REAL,
-#                 exit_price REAL, pnl REAL, strategy TEXT,
-#                 position_type TEXT, status TEXT, exit_reason TEXT, exit_time DATETIME
-#             )
-#         ''')
-#         conn.commit()
-#         return conn
-    
-#     def _set_dynamic_capital(self):
-#         try:
-#             balance = self.execution.get_balance()
-#             if balance and balance > 0:
-#                 return balance
-#         except:
-#             pass
-#         return Config.BASE_CAPITAL
-    
-#     def get_available_capital(self):
-#         return self.current_balance
-    
-#     def update_balance_after_trade(self, trade_value: float, pnl: float = 0, operation: str = "deduct"):
-#         margin_amount = trade_value / Config.BROKER_MARGIN_MULTIPLIER
-#         if operation == "deduct":
-#             self.current_balance -= margin_amount
-#         else:
-#             self.current_balance += margin_amount + (pnl / Config.BROKER_MARGIN_MULTIPLIER)
-#         return True
-    
-#     def save_trade(self, trade_data: Dict):
-#         """Save trade to database"""
-#         try:
-#             cursor = self.conn.cursor()
-#             cursor.execute('''
-#                 INSERT INTO trades (symbol, entry_time, entry_price, quantity, stop_loss, target_price, pnl, strategy, position_type, status)
-#                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-#             ''', (
-#                 trade_data.get('name', ''),
-#                 f"{trade_data.get('date', '')} {trade_data.get('entry_time', '')}",
-#                 trade_data.get('entry_price', 0),
-#                 trade_data.get('qty', 0),
-#                 trade_data.get('sl', 0),
-#                 trade_data.get('target', 0),
-#                 trade_data.get('pnl', 0),
-#                 trade_data.get('strategy', ''),
-#                 trade_data.get('position_type', ''),
-#                 'closed' if trade_data.get('exit_time') else 'open'
-#             ))
-#             self.conn.commit()
-#         except Exception as e:
-#             print(f"Failed to save trade: {e}")
-    
-#     def send_trade_alert(self, trade_data: Dict, alert_type: str):
-#         """Send trade alert to Telegram"""
-#         try:
-#             if alert_type == "ENTRY":
-#                 message = f"🚀 ENTRY: {trade_data.get('buy_sell', '')} {trade_data.get('qty', 0)} {trade_data.get('name', '')} @ ₹{trade_data.get('entry_price', 0):.2f}"
-#             elif alert_type == "EXIT":
-#                 pnl = trade_data.get('pnl', 0)
-#                 emoji = "📈" if pnl > 0 else "📉" if pnl < 0 else "➖"
-#                 message = f"🔴 EXIT: {trade_data.get('name', '')}\n{emoji} P&L: ₹{pnl:+,.2f}"
-#             else:
-#                 return
-#             self.telegram.send_alert(message)
-#         except Exception as e:
-#             print(f"Alert error: {e}")
-    
-#     def generate_signals(self, chart: pd.DataFrame, symbol: str) -> Dict[str, Any]:
-#         signals = {'buy_call': False, 'buy_put': False, 'strategies': []}
-        
-#         for strategy in self.strategies:
-#             try:
-#                 strategy.calculate_indicators(chart)
-#                 strategy_signals = strategy.generate_signals(chart, symbol)
-#                 signals['strategies'].append({'name': strategy.get_strategy_name(), 'signals': strategy_signals})
-                
-#                 weight = Config.STRATEGY_WEIGHTS.get(strategy.get_strategy_name(), 0)
-#                 if weight > 0:
-#                     if strategy_signals.get('buy_call'):
-#                         signals['buy_call'] = True
-#                     if strategy_signals.get('buy_put'):
-#                         signals['buy_put'] = True
-#             except Exception as e:
-#                 logger.error(f"Strategy {strategy.get_strategy_name()} failed: {e}")
-        
-#         return signals
-    
-#     def place_stock_order(self, name: str, signals: Dict, chart: pd.DataFrame):
-#         if name in self.orderbook:
-#             return
-        
-#         action = 'BUY' if signals.get('buy_call') else 'SELL'
-        
-#         # Find triggering strategy
-#         triggering_strategy = None
-#         for s in signals.get('strategies', []):
-#             if (action == 'BUY' and s['signals'].get('buy_call')) or (action == 'SELL' and s['signals'].get('buy_put')):
-#                 triggering_strategy = s
-#                 break
-        
-#         if not triggering_strategy:
-#             return
-        
-#         strategy_name = triggering_strategy['name']
-#         current_price = chart['close'].iloc[-1]
-        
-#         # Signal strength check
-#         scores = SignalStrength.calculate_signal_strength(chart, name, action)
-#         if not SignalStrength.should_trade(scores):
-#             print(f"Signal too weak ({scores['overall']} < {Config.MIN_SIGNAL_STRENGTH})")
-#             return
-        
-#         # Market regime filter
-#         if Config.USE_MARKET_REGIME_FILTER:
-#             regime = MarketRegime.detect_regime(chart)
-#             bias = MarketRegime.get_bias(regime)
-#             if (bias == 'LONG_ONLY' and action != 'BUY') or (bias == 'SHORT_ONLY' and action != 'SELL'):
-#                 return
-        
-#         # Cooldown check
-#         current_time = Config.get_current_time()
-#         if not self.signal_cooldown.can_take_signal(name, current_price, current_time):
-#             return
-        
-#         # Calculate ATR
-#         try:
-#             atr = chart.ta.atr(length=14)
-#             atr_points = atr.iloc[-1] * Config.ATR_MULTIPLIER if not pd.isna(atr.iloc[-1]) else current_price * 0.01
-#         except:
-#             atr_points = current_price * Config.ATR_MULTIPLIER * 0.01
-        
-#         # Position size
-#         qty = self.execution.calculate_position_size(atr_points, current_price, strategy_name)
-#         if qty <= 0:
-#             return
-        
-#         # Place order
-#         if Config.USE_SUPER_ORDERS:
-#             order = self.execution.place_super_order(name, action, qty, current_price, atr_points, strategy_name, chart)
-#         else:
-#             order = self.execution.place_traditional_order(name, action, qty, atr_points)
-        
-#         if order:
-#             trade_value = qty * current_price
-#             self.update_balance_after_trade(trade_value, operation="deduct")
-#             self.orderbook[name] = order
-#             self.signal_cooldown.record_signal(name, current_price, current_time)
-#             self.save_trade(order)
-#             self.send_trade_alert(order, "ENTRY")
-#             print(f"Order placed: {action} {qty} {name}")
-    
-#     def monitor_open_positions(self, symbol: str):
-#         if symbol not in self.orderbook:
-#             return
-        
-#         order = self.orderbook[symbol]
-#         current_price = self.data_service.get_current_price(symbol)
-        
-#         if not current_price:
-#             return
-        
-#         # Adaptive trailing stop
-#         if Config.ENABLE_ADAPTIVE_TRAILING and self.trailing_manager and order.get('order_type') == 'SUPER_OPTIMIZED':
-#             new_stop = self.trailing_manager.calculate_new_stop(
-#                 symbol, order['position_type'], current_price, order['entry_price'], order.get('atr', 0)
-#             )
-#             if new_stop and new_stop != order.get('sl'):
-#                 order['sl'] = new_stop
-        
-#         # Check stop loss
-#         sl_hit = (order['position_type'] == 'LONG' and current_price <= order['sl']) or \
-#                  (order['position_type'] == 'SHORT' and current_price >= order['sl'])
-        
-#         if sl_hit:
-#             self._close_position(symbol, current_price, "SL_HIT")
-#             return
-        
-#         # Check holding time
-#         if 'max_holding_time' in order and Config.get_current_time() >= order['max_holding_time']:
-#             self._close_position(symbol, current_price, "HOLDING_TIME_EXCEEDED")
-    
-#     def _close_position(self, symbol: str, exit_price: float, reason: str):
-#         if symbol not in self.orderbook:
-#             return
-        
-#         order = self.orderbook[symbol]
-#         pnl = ((exit_price - order['entry_price']) * order['qty']) if order['position_type'] == 'LONG' \
-#               else ((order['entry_price'] - exit_price) * order['qty'])
-        
-#         trade_value = order['qty'] * order['entry_price']
-#         self.update_balance_after_trade(trade_value, pnl, operation="add")
-        
-#         order.update({'exit_price': exit_price, 'pnl': pnl, 'remark': reason, 'exit_time': Config.get_current_time().strftime('%H:%M:%S')})
-#         self.completed_orders.append(order.copy())
-#         del self.orderbook[symbol]
-        
-#         self.save_trade(order)
-#         self.send_trade_alert(order, "EXIT")
-#         print(f"Position closed: {symbol} P&L: ₹{pnl:+,.2f}")
-    
-#     def close_all_positions(self):
-#         for symbol in list(self.orderbook.keys()):
-#             price = self.data_service.get_current_price(symbol)
-#             if price:
-#                 self._close_position(symbol, price, "MANUAL_CLOSE")
-    
-#     def is_market_open(self) -> bool:
-#         current_time = Config.get_current_time().time()
-#         weekday = Config.get_current_time().weekday()
-#         return (datetime.time(9, 15) <= current_time <= datetime.time(15, 30)) and (weekday < 5)
-    
-#     def verify_api_connection(self) -> bool:
-#         test_chart = self.data_service.get_symbol_data('RELIANCE')
-#         return test_chart is not None
-    
-#     def run(self):
-#         print("Starting main trading loop...")
-        
-#         try:
-#             while True:
-#                 if self.is_market_open():
-#                     for symbol in Config.WATCHLIST:
-#                         chart = self.data_service.get_symbol_data(symbol)
-#                         if chart is not None:
-#                             signals = self.generate_signals(chart, symbol)
-#                             if signals['buy_call'] or signals['buy_put']:
-#                                 self.place_stock_order(symbol, signals, chart)
-                            
-#                             if symbol in self.orderbook:
-#                                 self.monitor_open_positions(symbol)
-                    
-#                     time.sleep(15 * int(Config.TIMEFRAME))
-#                 else:
-#                     if Config.get_current_time().time() > datetime.time(15, 30):
-#                         self.close_all_positions()
-#                         break
-#                     time.sleep(60)
-#         except KeyboardInterrupt:
-#             print("Bot stopped by user")
-#             self.close_all_positions()
-
-
-
-
-#####################################################################################################################
-
-
-
-
-# main.py - COMPLETE ORIGINAL TRADING BOT (All logic preserved)
+# main.py - COMPLETE ORIGINAL TRADING BOT (winsound removed for Linux/Render)
 import os
 import sys
 import time
@@ -344,13 +6,16 @@ import json
 import sqlite3
 import logging
 import datetime
-import winsound
 import pandas as pd
 import numpy as np
 import talib
 from tabulate import tabulate
 from typing import Dict, List, Any, Optional
 from collections import defaultdict
+import threading
+import requests
+from telegram import Update
+from telegram.ext import Application, CommandHandler, ContextTypes
 
 from config import Config
 from auth_service import create_tradehull_with_totp
@@ -430,7 +95,7 @@ class OptionTradingBot:
         print("="*60)
 
     def setup_logging(self):
-        """Setup logger with ASCII-only characters for Windows"""
+        """Setup logger"""
         self.logger = logging.getLogger('OptionTradingBot')
         self.logger.setLevel(logging.INFO)
         
@@ -1620,13 +1285,11 @@ if __name__ == "__main__":
         print("\n=== Verifying API Connection ===")
         if not bot.verify_api_connection():
             print("❌ CRITICAL: API connection failed")
-            
             exit(1)
         
         print("\n=== Testing Telegram Notifications ===")
         if not bot.test_telegram_connection():
             print("⚠️ WARNING: Telegram notifications may not work")
-            
         
         startup_msg = "🤖 *Trading Bot Started with TOTP Authentication!*\n\nCommands: /status, /balance, /positions, /close_all"
         bot.send_telegram_alert(startup_msg)
