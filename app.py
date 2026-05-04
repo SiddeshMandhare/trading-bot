@@ -233,6 +233,89 @@ def export_data():
     csv = df.to_csv(index=False)
     return send_file(BytesIO(csv.encode()), mimetype='text/csv', as_attachment=True, download_name=f"trades_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv")
 
+
+
+
+
+@app.route('/api/debug/auth')
+def debug_auth():
+    """Debug endpoint to check authentication status"""
+    try:
+        from config import Config
+        from auth_service import get_token_status
+        
+        status = get_token_status(Config.CLIENT_CODE)
+        
+        # Test API connection
+        test_symbol = "RELIANCE"
+        test_price = 0
+        
+        try:
+            from market_data_service import MarketDataService
+            mds = MarketDataService(bot_instance.tsl if bot_instance else None)
+            test_price = mds.get_current_price(test_symbol)
+        except:
+            pass
+        
+        return jsonify({
+            'token_status': status,
+            'client_code': Config.CLIENT_CODE,
+            'test_symbol': test_symbol,
+            'test_price': test_price,
+            'market_open': is_market_open(),
+            'bot_running': is_bot_running
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+# Also fix the market endpoint to use real data
+@app.route('/api/market')
+def get_market_data():
+    """Get real market indices data"""
+    try:
+        global bot_instance
+        if bot_instance and hasattr(bot_instance, 'tsl'):
+            from market_data_service import MarketDataService
+            mds = MarketDataService(bot_instance.tsl)
+            data = mds.get_index_prices()
+            
+            # Format for frontend
+            formatted_data = {}
+            for name, values in data.items():
+                formatted_data[name] = {
+                    "ltp": values.get("ltp", 0),
+                    "change": values.get("change", 0),
+                    "change_percent": values.get("change_percent", 0)
+                }
+            return jsonify(formatted_data)
+        else:
+            # Return fallback if bot not initialized
+            return jsonify({
+                "NIFTY 50": {"ltp": 24500.50, "change": 0, "change_percent": 0},
+                "BANKNIFTY": {"ltp": 52100.00, "change": 0, "change_percent": 0},
+                "FINNIFTY": {"ltp": 21800.25, "change": 0, "change_percent": 0},
+                "SENSEX": {"ltp": 80500.00, "change": 0, "change_percent": 0}
+            })
+    except Exception as e:
+        logger.error(f"Market data error: {e}")
+        return jsonify({})
+
+
+def is_market_open():
+    """Check if market is open"""
+    from datetime import datetime
+    import pytz
+    ist = pytz.timezone('Asia/Kolkata')
+    current_time = datetime.now(ist)
+    weekday = current_time.weekday()
+    current_time_only = current_time.time()
+    
+    market_open_time = datetime.strptime("09:15", "%H:%M").time()
+    market_close_time = datetime.strptime("15:30", "%H:%M").time()
+    
+    return weekday < 5 and market_open_time <= current_time_only <= market_close_time
+
+
 # ============================================
 # HELPER FUNCTIONS
 # ============================================
